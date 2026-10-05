@@ -9,6 +9,11 @@
 			"comments": "댓글",
 			"all": "전체 활동"
 		},
+		"order": {
+			"label": "정렬 순서",
+			"newest": "최신순",
+			"oldest": "오래된순"
+		},
 		"editingComment": "댓글 수정 중...",
 		"cancel": "취소",
 		"sendHint": "⌘↵ 로 전송",

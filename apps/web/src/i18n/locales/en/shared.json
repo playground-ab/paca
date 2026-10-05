@@ -9,6 +9,11 @@
 			"comments": "Comments",
 			"all": "All activity"
 		},
+		"order": {
+			"label": "Sort order",
+			"newest": "Newest first",
+			"oldest": "Oldest first"
+		},
 		"editingComment": "Editing comment...",
 		"cancel": "Cancel",
 		"sendHint": "⌘↵ to send",

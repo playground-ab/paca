@@ -9,6 +9,11 @@
 			"comments": "Bình luận",
 			"all": "Tất cả hoạt động"
 		},
+		"order": {
+			"label": "Thứ tự sắp xếp",
+			"newest": "Mới nhất trước",
+			"oldest": "Cũ nhất trước"
+		},
 		"editingComment": "Đang chỉnh sửa bình luận...",
 		"cancel": "Hủy",
 		"sendHint": "⌘↵ để gửi",

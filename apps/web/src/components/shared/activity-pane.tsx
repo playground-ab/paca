@@ -5,6 +5,8 @@ import {
 	useQueryClient,
 } from "@tanstack/react-query";
 import {
+	ArrowDownWideNarrow,
+	ArrowUpNarrowWide,
 	GitBranch,
 	Loader2,
 	MessageSquare,
@@ -33,6 +35,12 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+	type ActivityOrder,
+	DEFAULT_ACTIVITY_ORDER,
+	parseActivityOrder,
+	sortByCreatedAt,
+} from "@/lib/activity-order";
 import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
 
@@ -64,7 +72,6 @@ export interface ActivityPaneConfig<T extends ActivityEntry> {
 	isRevertable?: (entry: T) => boolean;
 	describeActivity: (entry: T) => ReactNode;
 	getCommentBlocks: (content: T["content"]) => unknown[] | null;
-	sortAscending?: boolean;
 	nameMaps?: Record<string, Record<string, string>>;
 	currentUserId?: string;
 }
@@ -82,6 +89,16 @@ function readStoredActivityFilter(): ActivityFilter {
 	}
 }
 
+const ACTIVITY_ORDER_STORAGE_KEY = "paca:activity-order";
+
+function readStoredActivityOrder(): ActivityOrder {
+	try {
+		return parseActivityOrder(localStorage.getItem(ACTIVITY_ORDER_STORAGE_KEY));
+	} catch {
+		return DEFAULT_ACTIVITY_ORDER;
+	}
+}
+
 export function ActivityPane<T extends ActivityEntry>({
 	projectId,
 	queryKey,
@@ -94,7 +111,6 @@ export function ActivityPane<T extends ActivityEntry>({
 	isRevertable,
 	describeActivity,
 	getCommentBlocks,
-	sortAscending = false,
 	currentUserId,
 }: ActivityPaneConfig<T>) {
 	const { t } = useTranslation("shared");
@@ -105,6 +121,7 @@ export function ActivityPane<T extends ActivityEntry>({
 	const [filter, setFilter] = useState<ActivityFilter>(
 		readStoredActivityFilter,
 	);
+	const [order, setOrder] = useState<ActivityOrder>(readStoredActivityOrder);
 	const qc = useQueryClient();
 
 	const { data: activities = [] } = useQuery({
@@ -112,13 +129,11 @@ export function ActivityPane<T extends ActivityEntry>({
 		queryFn,
 	});
 
-	const sorted = useMemo(() => {
-		if (!sortAscending) return activities;
-		return [...activities].sort(
-			(a, b) =>
-				new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-		);
-	}, [activities, sortAscending]);
+	const sorted = useMemo(
+		() => sortByCreatedAt(activities, order),
+		[activities, order],
+	);
+	const newestFirst = order === "newest";
 
 	const hasNonCommentActivity = useMemo(
 		() => sorted.some((entry) => entry.activity_type !== "comment"),
@@ -139,17 +154,28 @@ export function ActivityPane<T extends ActivityEntry>({
 		}
 	};
 
-	// biome-ignore lint/correctness/useExhaustiveDependencies: activities is needed to scroll when new items are added
+	const handleOrderToggle = () => {
+		const next: ActivityOrder = newestFirst ? "oldest" : "newest";
+		setOrder(next);
+		try {
+			localStorage.setItem(ACTIVITY_ORDER_STORAGE_KEY, next);
+		} catch {
+			/* ignore */
+		}
+	};
+
+	// Keep the newest entry in view: it sits at the top or the bottom depending on the order.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: sorted is needed to scroll when new items are added
 	useEffect(() => {
 		requestAnimationFrame(() => {
 			const viewport = scrollAreaRef.current?.querySelector(
 				'[data-slot="scroll-area-viewport"]',
 			) as HTMLElement;
 			if (viewport) {
-				viewport.scrollTop = viewport.scrollHeight;
+				viewport.scrollTop = newestFirst ? 0 : viewport.scrollHeight;
 			}
 		});
-	}, [sorted]);
+	}, [sorted, newestFirst]);
 
 	const addMutation = useMutation({
 		mutationFn: (blocks: unknown[]) => {
@@ -209,6 +235,73 @@ export function ActivityPane<T extends ActivityEntry>({
 			? (getCommentBlocks(editingComment.content) ?? [])
 			: [];
 
+	const composer = addComment && (
+		<div
+			className={cn(
+				"shrink-0 border-border/25 p-3 space-y-1 bg-background/50",
+				newestFirst ? "border-b" : "border-t",
+			)}
+		>
+			{editingCommentId && (
+				<div className="flex items-center gap-2 px-1 pb-1">
+					<span className="text-xs font-medium text-foreground/70">
+						{t("activityPane.editingComment")}
+					</span>
+					<Button
+						variant="ghost"
+						size="sm"
+						className="h-5 text-xs rounded-md px-2"
+						onClick={handleCancelEdit}
+					>
+						{t("activityPane.cancel")}
+					</Button>
+				</div>
+			)}
+			<fieldset
+				className={cn(
+					"min-w-0 rounded-xl border border-border/30 bg-card/80 transition-all duration-200 overflow-hidden",
+					editorFocused && "border-primary/25 shadow-sm shadow-primary/5",
+					"[&_.bn-editor]:min-h-6 [&_.bn-editor]:max-h-48 [&_.bn-editor]:overflow-y-auto [&_.bn-editor]:py-1.5 [&_.bn-editor]:px-3 [&_.bn-editor]:text-sm [&_.bn-editor]:leading-relaxed",
+				)}
+				onFocus={() => setEditorFocused(true)}
+				onBlur={(e) => {
+					if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+						const blocks = editorRef.current?.getBlocks() ?? [];
+						const text = blocksToText(blocks).trim();
+						if (!text) setEditorFocused(false);
+					}
+				}}
+			>
+				<CommentEditor
+					key={editingCommentId}
+					ref={editorRef}
+					initialBlocks={editingCommentBlocks}
+					onSubmit={handleSend}
+					projectId={projectId}
+				/>
+			</fieldset>
+			<div className="flex items-center justify-between">
+				{editorFocused && (
+					<p className="text-xs text-muted-foreground/40 pl-1">
+						{t("activityPane.sendHint")}
+					</p>
+				)}
+				<button
+					type="button"
+					onClick={handleSend}
+					disabled={addMutation.isPending || updateMutation.isPending}
+					className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground disabled:opacity-40 hover:bg-primary/90 transition-all duration-150 shadow-sm disabled:shadow-none ml-auto"
+				>
+					{addMutation.isPending || updateMutation.isPending ? (
+						<Loader2 className="size-3 animate-spin" />
+					) : (
+						<Send className="size-3" />
+					)}
+				</button>
+			</div>
+		</div>
+	);
+
 	return (
 		<div className="flex w-full lg:w-80 lg:shrink-0 flex-col h-full lg:overflow-hidden border-t lg:border-t-0 lg:border-l border-border/25 bg-muted/10">
 			<div className="flex shrink-0 flex-col gap-2 border-b border-border/25 px-5 py-3 bg-muted/20">
@@ -217,11 +310,19 @@ export function ActivityPane<T extends ActivityEntry>({
 					<span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
 						{t("activityPane.title")}
 					</span>
-					{visible.length > 0 && (
-						<span className="ml-auto rounded-full bg-muted/60 px-2 py-0.5 text-xs font-bold text-muted-foreground/70 tabular-nums">
-							{visible.length}
-						</span>
-					)}
+					<div className="ml-auto flex items-center gap-1.5">
+						{visible.length > 0 && (
+							<span className="rounded-full bg-muted/60 px-2 py-0.5 text-xs font-bold text-muted-foreground/70 tabular-nums">
+								{visible.length}
+							</span>
+						)}
+						{sorted.length > 1 && (
+							<ActivityOrderToggle
+								newestFirst={newestFirst}
+								onToggle={handleOrderToggle}
+							/>
+						)}
+					</div>
 				</div>
 				{hasNonCommentActivity && (
 					<fieldset
@@ -257,6 +358,8 @@ export function ActivityPane<T extends ActivityEntry>({
 					</fieldset>
 				)}
 			</div>
+
+			{newestFirst && composer}
 
 			<ScrollArea
 				ref={scrollAreaRef}
@@ -307,68 +410,34 @@ export function ActivityPane<T extends ActivityEntry>({
 				</div>
 			</ScrollArea>
 
-			{addComment && (
-				<div className="shrink-0 border-t border-border/25 p-3 space-y-1 bg-background/50">
-					{editingCommentId && (
-						<div className="flex items-center gap-2 px-1 pb-1">
-							<span className="text-xs font-medium text-foreground/70">
-								{t("activityPane.editingComment")}
-							</span>
-							<Button
-								variant="ghost"
-								size="sm"
-								className="h-5 text-xs rounded-md px-2"
-								onClick={handleCancelEdit}
-							>
-								{t("activityPane.cancel")}
-							</Button>
-						</div>
-					)}
-					<fieldset
-						className={cn(
-							"min-w-0 rounded-xl border border-border/30 bg-card/80 transition-all duration-200 overflow-hidden",
-							editorFocused && "border-primary/25 shadow-sm shadow-primary/5",
-							"[&_.bn-editor]:min-h-6 [&_.bn-editor]:max-h-48 [&_.bn-editor]:overflow-y-auto [&_.bn-editor]:py-1.5 [&_.bn-editor]:px-3 [&_.bn-editor]:text-sm [&_.bn-editor]:leading-relaxed",
-						)}
-						onFocus={() => setEditorFocused(true)}
-						onBlur={(e) => {
-							if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-								const blocks = editorRef.current?.getBlocks() ?? [];
-								const text = blocksToText(blocks).trim();
-								if (!text) setEditorFocused(false);
-							}
-						}}
-					>
-						<CommentEditor
-							key={editingCommentId}
-							ref={editorRef}
-							initialBlocks={editingCommentBlocks}
-							onSubmit={handleSend}
-							projectId={projectId}
-						/>
-					</fieldset>
-					<div className="flex items-center justify-between">
-						{editorFocused && (
-							<p className="text-xs text-muted-foreground/40 pl-1">
-								{t("activityPane.sendHint")}
-							</p>
-						)}
-						<button
-							type="button"
-							onClick={handleSend}
-							disabled={addMutation.isPending || updateMutation.isPending}
-							className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground disabled:opacity-40 hover:bg-primary/90 transition-all duration-150 shadow-sm disabled:shadow-none ml-auto"
-						>
-							{addMutation.isPending || updateMutation.isPending ? (
-								<Loader2 className="size-3 animate-spin" />
-							) : (
-								<Send className="size-3" />
-							)}
-						</button>
-					</div>
-				</div>
-			)}
+			{!newestFirst && composer}
 		</div>
+	);
+}
+
+function ActivityOrderToggle({
+	newestFirst,
+	onToggle,
+}: {
+	newestFirst: boolean;
+	onToggle: () => void;
+}) {
+	const { t } = useTranslation("shared");
+	const current = newestFirst
+		? t("activityPane.order.newest")
+		: t("activityPane.order.oldest");
+	const Icon = newestFirst ? ArrowDownWideNarrow : ArrowUpNarrowWide;
+	return (
+		<button
+			type="button"
+			onClick={onToggle}
+			aria-label={`${t("activityPane.order.label")}: ${current}`}
+			title={t("activityPane.order.label")}
+			className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground/70 hover:bg-muted/60 hover:text-foreground transition-colors duration-150"
+		>
+			<Icon className="size-3" aria-hidden="true" />
+			{current}
+		</button>
 	);
 }
 

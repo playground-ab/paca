@@ -192,7 +192,6 @@ export function DocActivityPane({
 				}
 				return [];
 			}}
-			sortAscending
 			currentUserId={myMemberId}
 		/>
 	);
