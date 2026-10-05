@@ -9,6 +9,11 @@
 			"comments": "评论",
 			"all": "全部动态"
 		},
+		"order": {
+			"label": "排序方式",
+			"newest": "最新优先",
+			"oldest": "最早优先"
+		},
 		"editingComment": "正在编辑评论...",
 		"cancel": "取消",
 		"sendHint": "⌘↵ 发送",

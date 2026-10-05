@@ -9,6 +9,11 @@
 			"comments": "コメント",
 			"all": "すべてのアクティビティ"
 		},
+		"order": {
+			"label": "並び順",
+			"newest": "新しい順",
+			"oldest": "古い順"
+		},
 		"editingComment": "コメントを編集中...",
 		"cancel": "キャンセル",
 		"sendHint": "⌘↵ で送信",

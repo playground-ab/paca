@@ -9,6 +9,11 @@
 			"comments": "Comentários",
 			"all": "Toda a atividade"
 		},
+		"order": {
+			"label": "Ordem",
+			"newest": "Mais recentes primeiro",
+			"oldest": "Mais antigos primeiro"
+		},
 		"editingComment": "Editando comentário...",
 		"cancel": "Cancelar",
 		"sendHint": "⌘↵ para enviar",
